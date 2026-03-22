@@ -30,7 +30,13 @@
    ```bash
    pip install -r requirements.txt
    ```
-3. 运行爬虫：
+3. 激活虚拟环境（可选）：
    ```bash
-   scrapy crawl example_spider
+   python -m venv venv
+   source venv/bin/activate  # Linux/Mac
+   venv\Scripts\activate  # Windows
+   ```
+4. 运行爬虫：
+   ```bash
+   scrapy crawl 北大法宝
    ```
