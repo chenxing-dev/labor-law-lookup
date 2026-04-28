@@ -9,7 +9,11 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import NoSuchElementException
-from helpers import normalize_text
+
+try:
+    from .helpers import normalize_text
+except ImportError:
+    from helpers import normalize_text
 
 
 logger = logging.getLogger('北大法宝爬虫')
@@ -309,7 +313,6 @@ def render_text_from_json(data: dict) -> str:
             parts.append("")
             return
 
-        # Backward-compatible fallback for unknown object shapes.
         title_text = (node.get("title") or node.get("chapter_title")
                       or node.get("article_title") or "").strip()
         if title_text:
@@ -335,17 +338,14 @@ def render_text_from_json(data: dict) -> str:
 
 
 def fetch_data(url: str):
-    # 初始化 Firefox WebDriver
-    service = Service("/usr/sbin/geckodriver")  # geckodriver 的路径
+    service = Service("/usr/sbin/geckodriver")
     driver = webdriver.Firefox(service=service)
     try:
         driver.get(url)
-        # 等待页面加载完成
         WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.CLASS_NAME, "content"))
         )
 
-        # 按章节/条款/段落抓取结构化数据
         data = extract_data(driver)
         title = data.get("title")
 
@@ -359,13 +359,11 @@ def fetch_data(url: str):
 
         content = render_text_from_json(json_data)
 
-        # 调试：将页面源代码保存到本地文件，方便查看和调试
         temp_dir = Path("temp")
         temp_dir.mkdir(exist_ok=True)
         with open(temp_dir / "debug.html", "w", encoding="utf-8") as f:
             f.write(driver.page_source)
 
-        # 保存到本地文件
         output_dir = Path("data")
         output_dir.mkdir(exist_ok=True)
         txt_path = output_dir / f"{title}.txt"
@@ -385,6 +383,5 @@ def fetch_data(url: str):
         driver.quit()
 
 
-# 运行爬虫
 if __name__ == "__main__":
     fetch_data(url="https://www.pkulaw.com/chl/6393f2e43412bddbbdfb.html")
