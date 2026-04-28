@@ -1,8 +1,11 @@
+import argparse
 from datetime import datetime
 import json
+import logging
+import os
 from pathlib import Path
 import re
-import logging
+import shutil
 from selenium import webdriver
 from selenium.webdriver.firefox.service import Service
 from selenium.webdriver.common.by import By
@@ -11,9 +14,9 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import NoSuchElementException
 
 try:
-    from .helpers import normalize_text
+    from .helpers import normalize_text, get_geckodriver_service
 except ImportError:
-    from helpers import normalize_text
+    from helpers import normalize_text, get_geckodriver_service
 
 
 logger = logging.getLogger('北大法宝爬虫')
@@ -337,9 +340,12 @@ def render_text_from_json(data: dict) -> str:
     return text + "\n"
 
 
-def fetch_data(url: str):
-    service = Service("/usr/sbin/geckodriver")
-    driver = webdriver.Firefox(service=service)
+def fetch_data(url: str, headless: bool = False):
+    options = webdriver.FirefoxOptions()
+    if headless:
+        options.add_argument("-headless")
+    service = get_geckodriver_service()
+    driver = webdriver.Firefox(service=service, options=options)
     try:
         driver.get(url)
         WebDriverWait(driver, 10).until(
@@ -384,4 +390,17 @@ def fetch_data(url: str):
 
 
 if __name__ == "__main__":
-    fetch_data(url="https://www.pkulaw.com/chl/6393f2e43412bddbbdfb.html")
+    parser = argparse.ArgumentParser(
+        prog="law_spider.py",
+        description="抓取北大法宝法律条文页面并导出结构化 JSON 与纯文本",
+    )
+    parser.add_argument(
+        "--url", help="要抓取的完整页面 URL，例如：https://www.pkulaw.com/chl/6393f2e43412bddbbdfb.html")
+    parser.add_argument("--headless", action="store_true",
+                        help="以无头模式运行浏览器（不显示界面）")
+
+    args = parser.parse_args()
+
+    target_url = args.url or "https://www.pkulaw.com/chl/6393f2e43412bddbbdfb.html"
+
+    fetch_data(url=target_url, headless=args.headless)

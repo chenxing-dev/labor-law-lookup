@@ -1,8 +1,8 @@
-# labor-law-lookup
+# labor-law-lookup | 劳动法查询桌面应用
 
 `labor-law-lookup` 是一个面向劳动法律查询与检索的桌面应用项目。
 
-- 桌面应用部分基于 Tauri，用于劳动法查询、检索与信息展示
+- 桌面应用部分基于 Tauri，用于劳动法查询与检索
 - 爬虫部分基于 Python + Selenium，用于抓取法律条文并导出结构化数据
 
 **项目组成**：
@@ -53,9 +53,15 @@
    source venv/bin/activate  # Linux/Mac
    venv\Scripts\activate  # Windows
    ```
-4. 运行爬虫：
+4. 运行爬虫（示例）：
    ```bash
-   python spiders/law_spider.py
+   # 使用完整 URL
+   python spiders/law_spider.py --url "https://www.pkulaw.com/chl/6393f2e43412bddbbdfb.html"
+
+   # 可在无头模式运行
+   python spiders/law_spider.py --url "https://www.pkulaw.com/chl/6393f2e43412bddbbdfb.html" --headless
    ```
+
+注意：关于 `geckodriver` 路径，脚本会优先使用环境变量 `GECKODRIVER_PATH`，如果未设置则尝试在 `PATH` 中查找 `geckodriver`。
 
 运行完成后，输出文件会写入 `data/`，调试页面源码会写入 `temp/debug.html`。
