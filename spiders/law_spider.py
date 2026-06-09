@@ -4,16 +4,17 @@ Author: 陈刑
 Description:
     该脚本使用 Selenium 模拟浏览器行为，抓取北大法宝法律条文页面的内容，并将其结构化为 JSON 格式，同时导出纯文本版本。
     它能够提取法律条文的标题、元数据（如制定机关、发文字号、公布日期等）以及正文内容（包括编、章、节、条、款、项等层级结构）。
-    爬取的数据会保存到本地的 `data` 目录下，分别以法律条文标题命名的 `.json` 和 `.txt` 文件。
+    爬取的数据会保存到本地的 `data` 目录下，分别以法律条文标题命名的 `.json` 文件。
 Usage:
+    python law_spider.py [--headless] [--force]
     python law_spider.py --url <目标页面URL> [--headless]
 Example:
+    python law_spider.py --headless
     python law_spider.py --url https://www.pkulaw.com/chl/6393f2e43412bddbbdfb.html --headless
 """
 
 import argparse
 from datetime import datetime
-import html
 import json
 import logging
 from pathlib import Path
@@ -27,85 +28,81 @@ from selenium.common.exceptions import NoSuchElementException
 
 try:
     from .helpers import normalize_text, get_geckodriver_service
+    from .urls import PKULAW_URLS
 except ImportError:
     from helpers import normalize_text, get_geckodriver_service
+    from urls import PKULAW_URLS
 
 
 logger = logging.getLogger('北大法宝爬虫')
 
 
-def resolve_law_url(driver, title: str) -> str:
-    """通过浏览器上下文调用站内接口，按法规标题解析规范页面 URL。"""
-    driver.get("https://www.pkulaw.com/")
+def normalize_configured_urls(
+        raw_urls: dict[str, str] | list[str] | tuple[str, ...] | None
+) -> list[tuple[str, str]]:
+    """Normalize configured URLs into a deduplicated label/url list."""
+    if not raw_urls:
+        return []
 
-    response = driver.execute_async_script(
-        """
-        const title = arguments[0];
-        const done = arguments[arguments.length - 1];
+    pairs = raw_urls.items() if isinstance(raw_urls, dict) else ((url, url)
+                                                                 for url in raw_urls)
+    configured_urls = []
+    seen = set()
 
-        fetch('/lawrule?lib=chl&keywords=' + encodeURIComponent(title), {
-            headers: { 'Accept': 'application/json' },
-            credentials: 'include'
-        })
-            .then(async (response) => {
-                done({
-                    ok: response.ok,
-                    status: response.status,
-                    text: await response.text(),
-                });
-            })
-            .catch((error) => done({ error: String(error) }));
-        """,
-        title,
-    )
+    for raw_label, raw_url in pairs:
+        label = normalize_text(str(raw_label or ""))
+        url = normalize_text(str(raw_url or ""))
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        configured_urls.append((label or url, url))
 
-    if response.get("error"):
-        raise RuntimeError(f"法规标题解析请求失败: {response['error']}")
+    return configured_urls
 
-    if not response.get("ok"):
-        raise RuntimeError(
-            f"法规标题解析请求失败，HTTP {response.get('status', 'unknown')}"
-        )
 
-    raw_text = (response.get("text") or "").strip()
-    if not raw_text:
-        raise RuntimeError(f"法规标题解析返回空响应: {title}")
+def load_existing_output_urls(data_dir: Path | None = None) -> set[str]:
+    """Return URLs that already exist in previously exported JSON files."""
+    output_dir = data_dir or Path("data")
+    if not output_dir.exists():
+        return set()
 
-    try:
-        payload = json.loads(raw_text)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"法规标题解析返回了非 JSON 响应: {title}") from exc
+    existing_urls = set()
+    for json_path in output_dir.glob("*.json"):
+        try:
+            payload = json.loads(json_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            logger.warning("Skipping unreadable JSON file: %s", json_path)
+            continue
 
-    if isinstance(payload, list):
-        items = payload
-    elif isinstance(payload, dict):
-        if isinstance(payload.get("data"), list):
-            items = payload["data"]
-        elif isinstance(payload.get("result"), list):
-            items = payload["result"]
-        else:
-            items = []
-    else:
-        items = []
+        if not isinstance(payload, dict):
+            continue
 
-    valid_items = [item for item in items if isinstance(
-        item, dict) and item.get("url")]
-    if not valid_items:
-        raise RuntimeError(f"未找到匹配的法规标题: {title}")
+        url = normalize_text(str(payload.get("url") or ""))
+        if url:
+            existing_urls.add(url)
 
-    preferred_item = next(
-        (
-            item for item in valid_items
-            if "现行有效" in html.unescape(str(item.get("name", "")))
-        ),
-        valid_items[0],
-    )
+    return existing_urls
 
-    relative_url = str(preferred_item["url"]).strip()
-    if relative_url.startswith(("http://", "https://")):
-        return relative_url
 
-    return f"https://www.pkulaw.com{relative_url}"
+def get_pending_configured_urls(force: bool = False) -> list[tuple[str, str]]:
+    """Load configured PKULaw URLs and skip laws already exported to data/."""
+    configured_urls = normalize_configured_urls(PKULAW_URLS)
+    if not configured_urls:
+        raise ValueError("spiders/urls.py 中没有配置任何 PKULaw URL")
+
+    if force:
+        return configured_urls
+
+    existing_urls = load_existing_output_urls()
+    pending_urls = []
+
+    for label, url in configured_urls:
+        if url in existing_urls:
+            print(f"跳过已抓取法规：{label}")
+            continue
+        pending_urls.append((label, url))
+
+    return pending_urls
 
 
 def extract_title(driver) -> str:
@@ -354,157 +351,113 @@ def extract_data(driver) -> dict:
     return {"title": title, "metadata": metadata, "content": content}
 
 
-def render_text_from_json(data: dict) -> str:
-    """从结构化 JSON 数据中生成纯文本内容"""
-    parts = []
+def save_law_data(driver, url: str) -> str:
+    """抓取当前法规页面并保存 JSON 文件。"""
+    driver.get(url)
+    WebDriverWait(driver, 10).until(
+        EC.presence_of_element_located((By.CLASS_NAME, "content"))
+    )
 
+    data = extract_data(driver)
     title = data.get("title")
-    if title:
-        parts.append(title)
-        parts.append("")
+    if not title:
+        raise RuntimeError(f"页面缺少法规标题: {url}")
 
-    metadata = data.get("metadata") or {}
-    for key in ["制定机关", "发文字号", "公布日期", "施行日期", "时效性", "效力位阶", "法规类别"]:
-        raw_value = metadata.get(key)
-        if isinstance(raw_value, list):
-            value = " ".join(item for item in raw_value if item).strip()
-        else:
-            value = (raw_value or "").strip()
-        if value:
-            parts.append(f"{key}：{value}")
+    json_data = {
+        "url": url,
+        "title": title,
+        "metadata": data.get("metadata"),
+        "content": data.get("content"),
+        "extracted_at": datetime.now().isoformat(timespec="seconds"),
+    }
 
-    if metadata:
-        parts.append("")
+    temp_dir = Path("temp")
+    temp_dir.mkdir(exist_ok=True)
+    with open(temp_dir / "debug.html", "w", encoding="utf-8") as f:
+        f.write(driver.page_source)
 
-    def append_node_text(node: dict):
-        node_type = (node.get("type") or "").strip()
+    output_dir = Path("data")
+    output_dir.mkdir(exist_ok=True)
 
-        if node_type in {"编", "章", "节"}:
-            title_text = (node.get("title") or "").strip()
-            if title_text:
-                parts.append(title_text)
-                parts.append("")
+    json_path = output_dir / f"{title}.json"
+    json_path.write_text(
+        json.dumps(json_data, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
-            for child in node.get("children", []):
-                append_node_text(child)
+    print(f"成功保存结构化 JSON 到 {json_path}")
+    return title
+
+
+def fetch_data(
+    url: str | None = None,
+    urls: list[tuple[str, str]] | None = None,
+    headless: bool = False,
+    force: bool = False,
+):
+    """抓取指定 URL 或配置文件中的多个 URL，并保存为 JSON 和纯文本文件。"""
+    requested_urls = None
+    if not url:
+        requested_urls = urls if urls is not None else get_pending_configured_urls(
+            force=force)
+        if not requested_urls:
+            print("没有需要抓取的新法规。")
             return
 
-        if node_type == "条":
-            article_title = (node.get("title") or "").strip()
-            if article_title:
-                parts.append(article_title)
-
-            for clause in node.get("clauses", []):
-                clause_text = (clause.get("text") or "").strip()
-                if clause_text:
-                    parts.append(clause_text)
-
-                for item in clause.get("items", []):
-                    item_text = (item.get("text") or "").strip()
-                    if item_text:
-                        parts.append(item_text)
-
-            parts.append("")
-            return
-
-        title_text = (node.get("title") or node.get("chapter_title")
-                      or node.get("article_title") or "").strip()
-        if title_text:
-            parts.append(title_text)
-
-        for paragraph in node.get("paragraphs", []):
-            p = (paragraph or "").strip()
-            if p:
-                parts.append(p)
-
-        for child in node.get("children", []):
-            append_node_text(child)
-
-        if title_text:
-            parts.append("")
-
-    for node in data.get("content") or data.get("chapters", []):
-        append_node_text(node)
-
-    text = "\n".join(parts)
-    text = re.sub(r"\n{3,}", "\n\n", text).strip()
-    return text + "\n"
-
-
-def fetch_data(url: str | None = None, title: str | None = None, headless: bool = False):
-    """抓取指定 URL 或标题对应的法律条文数据，并保存为 JSON 和纯文本文件"""
     options = webdriver.FirefoxOptions()
     if headless:
         options.add_argument("-headless")
     service = get_geckodriver_service()
     driver = WebDriver(service=service, options=options)
     try:
-        if title:
-            url = resolve_law_url(driver, title)
-            logger.info("Resolved title '%s' to URL: %s", title, url)
+        if url:
+            save_law_data(driver, url)
+            return
 
-        if not url:
-            raise ValueError("必须提供法规 URL 或标题")
+        failures = []
+        for label, requested_url in requested_urls:
+            try:
+                logger.info("Scraping '%s' from URL: %s", label, requested_url)
+                save_law_data(driver, requested_url)
+            except Exception as exc:  # pylint: disable=broad-except
+                failures.append((label, str(exc)))
+                print(f"抓取失败：{label} -> {exc}")
 
-        driver.get(url)
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.CLASS_NAME, "content"))
-        )
+        if failures and len(failures) == len(requested_urls):
+            raise RuntimeError("所有法规抓取均失败")
 
-        data = extract_data(driver)
-        title = data.get("title")
-
-        json_data = {
-            "url": url,
-            "title": title,
-            "metadata": data.get("metadata"),
-            "content": data.get("content"),
-            "extracted_at": datetime.now().isoformat(timespec="seconds"),
-        }
-
-        content = render_text_from_json(json_data)
-
-        temp_dir = Path("temp")
-        temp_dir.mkdir(exist_ok=True)
-        with open(temp_dir / "debug.html", "w", encoding="utf-8") as f:
-            f.write(driver.page_source)
-
-        output_dir = Path("data")
-        output_dir.mkdir(exist_ok=True)
-        txt_path = output_dir / f"{title}.txt"
-        txt_path.write_text(content, encoding="utf-8")
-
-        json_path = output_dir / f"{title}.json"
-        json_path.write_text(
-            json.dumps(json_data, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-
-        print(f"成功保存法条内容到 {txt_path}")
-        print(f"成功保存结构化 JSON 到 {json_path}")
+        if failures:
+            print("以下法规未成功抓取：")
+            for failed_label, reason in failures:
+                print(f"- {failed_label}: {reason}")
     except Exception as e:  # pylint: disable=broad-except
         print(f"发生错误: {e}")
     finally:
         driver.quit()
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """爬虫主函数，解析命令行参数并执行抓取任务"""
     parser = argparse.ArgumentParser(
         prog="law_spider.py",
         description="抓取北大法宝法律条文页面并导出结构化 JSON 与纯文本",
     )
-    source_group = parser.add_mutually_exclusive_group(required=True)
-    source_group.add_argument(
+    parser.add_argument(
         "--url",
-        help="要抓取的完整页面 URL，例如：https://www.pkulaw.com/chl/6393f2e43412bddbbdfb.html",
-    )
-    source_group.add_argument(
-        "--title",
-        help="按法规标题解析并抓取，例如：中华人民共和国劳动法",
+        help="要抓取的完整页面 URL；不传时默认读取 spiders/urls.py 中配置的 URL 列表",
     )
     parser.add_argument("--headless", action="store_true",
                         help="以无头模式运行浏览器（不显示界面）")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="忽略 data/ 中已存在的 URL 记录，强制重新抓取 spiders/urls.py 中的配置项",
+    )
 
     args = parser.parse_args()
 
-    fetch_data(url=args.url, title=args.title, headless=args.headless)
+    fetch_data(url=args.url, headless=args.headless, force=args.force)
+
+
+if __name__ == "__main__":
+    main()

@@ -16,23 +16,17 @@
 - `data/`：抓取后生成的本地数据文件
 - `requirements.txt`：Python 依赖列表
 
-**爬虫模块**：
-
-- `spiders/law_spider.py`：抓取北大法宝法规页面并生成输出文件
-- `spiders/helpers.py`：爬虫使用的文本清洗辅助函数
-
 **当前已包含的爬虫能力**：
 
 - 抓取北大法宝法规页面内容
 - 提取标题、元数据与分层法条结构
-- 导出 `.json` 和 `.txt` 两种结果文件
+- 导出 `.json` 文件
 - 保存调试用 HTML 页面源码，便于排查解析问题
 
 **环境要求**：
 
 - Python 3.8+
 - Firefox 与 !!! **`geckodriver`** !!!
-- Bash wrapper 额外依赖：`curl`，建议安装 `jq`（未安装时会自动回退到 Python 解析 JSON）
 - 依赖见 `requirements.txt`
 
 ---
@@ -54,19 +48,33 @@
    ```bash
    pip install -r requirements.txt
    ```
-4. 运行爬虫按法规标题抓取：
-   ```bash
-   ./scrape 中华人民共和国劳动法
+4. 在 `spiders/urls.py` 中维护要抓取的北大法宝 URL 列表：
+   ```python
+   PKULAW_URLS = {
+       "中华人民共和国劳动法(2018修正)": "https://www.pkulaw.com/chl/6393f2e43412bddbbdfb.html",
+       "中华人民共和国劳动合同法(2012修正)": "https://www.pkulaw.com/chl/7ab5e7d605f859e6bdfb.html",
+   }
    ```
 
-   脚本会在 Selenium 浏览器会话内解析法规标题，优先选择名称中包含“现行有效”的结果，再抓取对应法规页面。
+5. 运行批量抓取：
+   ```bash
+   python spiders --headless
+   ```
+
+   脚本会在 Selenium 浏览器会话中依次抓取 `spiders/urls.py` 里配置的 URL，并根据 `data/*.json` 中已保存的 `url` 字段自动跳过已抓取的法规。
 
 注意：关于 `geckodriver` 路径，脚本会优先使用环境变量 `GECKODRIVER_PATH`，如果未设置则尝试在 `PATH` 中查找 `geckodriver`。
 
-如果需要直接调用 Python CLI，也可以使用：
+如果需要直接抓取单个 URL，也可以使用：
 
 ```bash
-python spiders/law_spider.py --title 中华人民共和国劳动法 --headless
+python spiders/law_spider.py --url https://www.pkulaw.com/chl/6393f2e43412bddbbdfb.html --headless
+```
+
+如果需要强制重新抓取 `spiders/urls.py` 中的全部配置项，可以使用：
+
+```bash
+python spiders --headless --force
 ```
 
 运行完成后，输出文件会写入 `data/`，调试页面源码会写入 `temp/debug.html`。
