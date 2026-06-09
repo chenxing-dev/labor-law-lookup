@@ -31,7 +31,7 @@
 **环境要求**：
 
 - Python 3.8+
-- Firefox 与 `geckodriver`
+- Firefox 与 !!! **`geckodriver`** !!!
 - 依赖见 `requirements.txt`
 
 ---
