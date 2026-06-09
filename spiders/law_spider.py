@@ -13,6 +13,7 @@ Example:
 
 import argparse
 from datetime import datetime
+import html
 import json
 import logging
 from pathlib import Path
@@ -31,6 +32,80 @@ except ImportError:
 
 
 logger = logging.getLogger('北大法宝爬虫')
+
+
+def resolve_law_url(driver, title: str) -> str:
+    """通过浏览器上下文调用站内接口，按法规标题解析规范页面 URL。"""
+    driver.get("https://www.pkulaw.com/")
+
+    response = driver.execute_async_script(
+        """
+        const title = arguments[0];
+        const done = arguments[arguments.length - 1];
+
+        fetch('/lawrule?lib=chl&keywords=' + encodeURIComponent(title), {
+            headers: { 'Accept': 'application/json' },
+            credentials: 'include'
+        })
+            .then(async (response) => {
+                done({
+                    ok: response.ok,
+                    status: response.status,
+                    text: await response.text(),
+                });
+            })
+            .catch((error) => done({ error: String(error) }));
+        """,
+        title,
+    )
+
+    if response.get("error"):
+        raise RuntimeError(f"法规标题解析请求失败: {response['error']}")
+
+    if not response.get("ok"):
+        raise RuntimeError(
+            f"法规标题解析请求失败，HTTP {response.get('status', 'unknown')}"
+        )
+
+    raw_text = (response.get("text") or "").strip()
+    if not raw_text:
+        raise RuntimeError(f"法规标题解析返回空响应: {title}")
+
+    try:
+        payload = json.loads(raw_text)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"法规标题解析返回了非 JSON 响应: {title}") from exc
+
+    if isinstance(payload, list):
+        items = payload
+    elif isinstance(payload, dict):
+        if isinstance(payload.get("data"), list):
+            items = payload["data"]
+        elif isinstance(payload.get("result"), list):
+            items = payload["result"]
+        else:
+            items = []
+    else:
+        items = []
+
+    valid_items = [item for item in items if isinstance(
+        item, dict) and item.get("url")]
+    if not valid_items:
+        raise RuntimeError(f"未找到匹配的法规标题: {title}")
+
+    preferred_item = next(
+        (
+            item for item in valid_items
+            if "现行有效" in html.unescape(str(item.get("name", "")))
+        ),
+        valid_items[0],
+    )
+
+    relative_url = str(preferred_item["url"]).strip()
+    if relative_url.startswith(("http://", "https://")):
+        return relative_url
+
+    return f"https://www.pkulaw.com{relative_url}"
 
 
 def extract_title(driver) -> str:
@@ -356,14 +431,21 @@ def render_text_from_json(data: dict) -> str:
     return text + "\n"
 
 
-def fetch_data(url: str, headless: bool = False):
-    """抓取指定 URL 的法律条文数据，并保存为 JSON 和纯文本文件"""
+def fetch_data(url: str | None = None, title: str | None = None, headless: bool = False):
+    """抓取指定 URL 或标题对应的法律条文数据，并保存为 JSON 和纯文本文件"""
     options = webdriver.FirefoxOptions()
     if headless:
         options.add_argument("-headless")
     service = get_geckodriver_service()
     driver = WebDriver(service=service, options=options)
     try:
+        if title:
+            url = resolve_law_url(driver, title)
+            logger.info("Resolved title '%s' to URL: %s", title, url)
+
+        if not url:
+            raise ValueError("必须提供法规 URL 或标题")
+
         driver.get(url)
         WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.CLASS_NAME, "content"))
@@ -411,14 +493,18 @@ if __name__ == "__main__":
         prog="law_spider.py",
         description="抓取北大法宝法律条文页面并导出结构化 JSON 与纯文本",
     )
-    parser.add_argument(
-        "--url", required=True,
-        help="要抓取的完整页面 URL，例如：https://www.pkulaw.com/chl/6393f2e43412bddbbdfb.html")
+    source_group = parser.add_mutually_exclusive_group(required=True)
+    source_group.add_argument(
+        "--url",
+        help="要抓取的完整页面 URL，例如：https://www.pkulaw.com/chl/6393f2e43412bddbbdfb.html",
+    )
+    source_group.add_argument(
+        "--title",
+        help="按法规标题解析并抓取，例如：中华人民共和国劳动法",
+    )
     parser.add_argument("--headless", action="store_true",
                         help="以无头模式运行浏览器（不显示界面）")
 
     args = parser.parse_args()
 
-    target_url = args.url
-
-    fetch_data(url=target_url, headless=args.headless)
+    fetch_data(url=args.url, title=args.title, headless=args.headless)
