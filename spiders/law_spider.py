@@ -1,13 +1,24 @@
+"""
+北大法宝爬虫
+Author: 陈刑
+Description:
+    该脚本使用 Selenium 模拟浏览器行为，抓取北大法宝法律条文页面的内容，并将其结构化为 JSON 格式，同时导出纯文本版本。
+    它能够提取法律条文的标题、元数据（如制定机关、发文字号、公布日期等）以及正文内容（包括编、章、节、条、款、项等层级结构）。
+    爬取的数据会保存到本地的 `data` 目录下，分别以法律条文标题命名的 `.json` 和 `.txt` 文件。
+Usage:
+    python law_spider.py --url <目标页面URL> [--headless]
+Example:
+    python law_spider.py --url https://www.pkulaw.com/chl/6393f2e43412bddbbdfb.html --headless
+"""
+
 import argparse
 from datetime import datetime
 import json
 import logging
-import os
 from pathlib import Path
 import re
-import shutil
 from selenium import webdriver
-from selenium.webdriver.firefox.service import Service
+from selenium.webdriver.firefox.webdriver import WebDriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -23,6 +34,7 @@ logger = logging.getLogger('北大法宝爬虫')
 
 
 def extract_title(driver) -> str:
+    """提取法律条文的标题"""
     try:
         return normalize_text(driver.find_element(
             By.ID, "ArticleTitle").get_attribute("value"))
@@ -33,6 +45,7 @@ def extract_title(driver) -> str:
 
 
 def extract_metadata(driver) -> dict:
+    """提取法律条文的元数据，如制定机关、发文字号、公布日期等"""
     metadata = {}
 
     boxes = driver.find_elements(By.CSS_SELECTOR, ".fields .box")
@@ -57,6 +70,7 @@ def extract_metadata(driver) -> dict:
 
 
 def extract_content(driver) -> list:
+    """提取法律条文的正文内容，构建层级结构（编、章、节、条、款、项）"""
     heading_anchor_re = re.compile(r"sort\d+_(bian|zhang|jie)_(\d+)$")
     article_anchor_re = re.compile(r"tiao_(\d+)$")
     clause_anchor_re = re.compile(r"tiao_\d+_kuan_(\d+)$")
@@ -258,6 +272,7 @@ def extract_content(driver) -> list:
 
 
 def extract_data(driver) -> dict:
+    """从页面中提取标题、元数据和正文内容，构建结构化数据"""
     title = extract_title(driver)
     metadata = extract_metadata(driver)
     content = extract_content(driver)
@@ -265,6 +280,7 @@ def extract_data(driver) -> dict:
 
 
 def render_text_from_json(data: dict) -> str:
+    """从结构化 JSON 数据中生成纯文本内容"""
     parts = []
 
     title = data.get("title")
@@ -341,11 +357,12 @@ def render_text_from_json(data: dict) -> str:
 
 
 def fetch_data(url: str, headless: bool = False):
+    """抓取指定 URL 的法律条文数据，并保存为 JSON 和纯文本文件"""
     options = webdriver.FirefoxOptions()
     if headless:
         options.add_argument("-headless")
     service = get_geckodriver_service()
-    driver = webdriver.Firefox(service=service, options=options)
+    driver = WebDriver(service=service, options=options)
     try:
         driver.get(url)
         WebDriverWait(driver, 10).until(
@@ -383,7 +400,7 @@ def fetch_data(url: str, headless: bool = False):
 
         print(f"成功保存法条内容到 {txt_path}")
         print(f"成功保存结构化 JSON 到 {json_path}")
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-except
         print(f"发生错误: {e}")
     finally:
         driver.quit()
@@ -395,12 +412,13 @@ if __name__ == "__main__":
         description="抓取北大法宝法律条文页面并导出结构化 JSON 与纯文本",
     )
     parser.add_argument(
-        "--url", help="要抓取的完整页面 URL，例如：https://www.pkulaw.com/chl/6393f2e43412bddbbdfb.html")
+        "--url", required=True,
+        help="要抓取的完整页面 URL，例如：https://www.pkulaw.com/chl/6393f2e43412bddbbdfb.html")
     parser.add_argument("--headless", action="store_true",
                         help="以无头模式运行浏览器（不显示界面）")
 
     args = parser.parse_args()
 
-    target_url = args.url or "https://www.pkulaw.com/chl/6393f2e43412bddbbdfb.html"
+    target_url = args.url
 
     fetch_data(url=target_url, headless=args.headless)
