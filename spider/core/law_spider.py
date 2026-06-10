@@ -19,22 +19,18 @@ import json
 import logging
 from pathlib import Path
 import re
-from selenium import webdriver
-from selenium.webdriver.firefox.webdriver import WebDriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import NoSuchElementException
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
 
-try:
-    from .helpers import normalize_text, get_geckodriver_service
-    from .urls import PKULAW_URLS
-except ImportError:
-    from helpers import normalize_text, get_geckodriver_service
-    from urls import PKULAW_URLS
+from config.law_list import PKULAW_URLS
+from core.base_spider import create_firefix_driver
+from utils.text_cleaner import normalize_text
 
 
 logger = logging.getLogger('北大法宝爬虫')
+OUTPUT_DIR = "output"
 
 
 def normalize_configured_urls(
@@ -60,9 +56,9 @@ def normalize_configured_urls(
     return configured_urls
 
 
-def load_existing_output_urls(data_dir: Path | None = None) -> set[str]:
+def load_existing_output_urls(data_dir: Path) -> set[str]:
     """Return URLs that already exist in previously exported JSON files."""
-    output_dir = data_dir or Path("data")
+    output_dir = data_dir
     if not output_dir.exists():
         return set()
 
@@ -85,7 +81,7 @@ def load_existing_output_urls(data_dir: Path | None = None) -> set[str]:
 
 
 def get_pending_configured_urls(force: bool = False) -> list[tuple[str, str]]:
-    """Load configured PKULaw URLs and skip laws already exported to data/."""
+    """Load configured PKULaw URLs and skip laws already exported to output/."""
     configured_urls = normalize_configured_urls(PKULAW_URLS)
     if not configured_urls:
         raise ValueError("spiders/urls.py 中没有配置任何 PKULaw URL")
@@ -93,7 +89,7 @@ def get_pending_configured_urls(force: bool = False) -> list[tuple[str, str]]:
     if force:
         return configured_urls
 
-    existing_urls = load_existing_output_urls()
+    existing_urls = load_existing_output_urls(Path(OUTPUT_DIR))
     pending_urls = []
 
     for label, url in configured_urls:
@@ -371,12 +367,7 @@ def save_law_data(driver, url: str) -> str:
         "extracted_at": datetime.now().isoformat(timespec="seconds"),
     }
 
-    temp_dir = Path("temp")
-    temp_dir.mkdir(exist_ok=True)
-    with open(temp_dir / "debug.html", "w", encoding="utf-8") as f:
-        f.write(driver.page_source)
-
-    output_dir = Path("data")
+    output_dir = Path(OUTPUT_DIR)
     output_dir.mkdir(exist_ok=True)
 
     json_path = output_dir / f"{title}.json"
@@ -404,11 +395,8 @@ def fetch_data(
             print("没有需要抓取的新法规。")
             return
 
-    options = webdriver.FirefoxOptions()
-    if headless:
-        options.add_argument("-headless")
-    service = get_geckodriver_service()
-    driver = WebDriver(service=service, options=options)
+    driver = create_firefix_driver(headless=headless)
+
     try:
         if url:
             save_law_data(driver, url)
@@ -451,7 +439,7 @@ def main() -> None:
     parser.add_argument(
         "--force",
         action="store_true",
-        help="忽略 data/ 中已存在的 URL 记录，强制重新抓取 spiders/urls.py 中的配置项",
+        help="忽略 output/ 中已存在的 URL 记录，强制重新抓取 spiders/urls.py 中的配置项",
     )
 
     args = parser.parse_args()

@@ -1,10 +1,10 @@
 """
 北大法宝爬虫
 Usage:
-    python -m spiders
+    python main.py
 """
 
-from law_spider import main
+from core.law_spider import main
 
 
 if __name__ == "__main__":

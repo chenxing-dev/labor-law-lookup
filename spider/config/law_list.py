@@ -1,5 +1,5 @@
 """
-爬取北大法宝法律法规 URL 列表
+北大法宝劳动法相关法规列表
 """
 
 PKULAW_URLS = {
@@ -12,7 +12,7 @@ PKULAW_URLS = {
     "全国人民代表大会常务委员会关于批准《国务院关于安置老弱病残干部的暂行办法》的决议":
     "https://www.pkulaw.com/chl/4f657c8c1db4ebc7bdfb.html",
     "全国人民代表大会常务委员会关于批准《国务院关于工人退休、退职的暂行办法》的决议":
-    "https://www.pkulaw.com/chl/fe82371225924a6bbdfb.html",
+    "https://www.pkulaw.com/chl/fe82371225924a6bbdfb.html"
     # "中华人民共和国劳动合同法实施条例": "https://www.pkulaw.com/chl/aae289ed71e4880abdfb.html",
     # "全国人民代表大会常务委员会关于实施渐进式延迟法定退休年龄的决定": "https://www.pkulaw.com/chl/1c69a59bef3beb23bdfb.html",
     # "劳动保障监察条例": "https://www.pkulaw.com/chl/c2d7393c01ecdcc8bdfb.html",

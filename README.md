@@ -1,80 +1,15 @@
-# labor-law-lookup | 劳动法查询桌面应用
+# labor-law-lookup | 劳动法查询网页应用
 
-`labor-law-lookup` 是一个面向劳动法律查询与检索的桌面应用项目。
+`labor-law-lookup` 是一个面向劳动法律查询与检索的网页应用项目。
 
-- 桌面应用部分基于 Tauri，用于劳动法查询与检索
+- 网页应用部分：Vite+
 - 爬虫部分基于 Python + Selenium，用于抓取法律条文并导出结构化数据
 
 **项目组成**：
 
-- Tauri 桌面应用：承载劳动法查询与展示功能
+- Vite+ 网页应用：提供用户界面，允许用户输入查询条件并展示查询结果
 - Python 爬虫：负责抓取、解析并输出法律条文数据
 
 **当前目录结构**：
 
-- `spiders/`：Python + Selenium 爬虫脚本与辅助函数
-- `data/`：抓取后生成的本地数据文件
-- `requirements.txt`：Python 依赖列表
-
-**当前已包含的爬虫能力**：
-
-- 抓取北大法宝法规页面内容
-- 提取标题、元数据与分层法条结构
-- 导出 `.json` 文件
-- 保存调试用 HTML 页面源码，便于排查解析问题
-
-**环境要求**：
-
-- Python 3.8+
-- Firefox 与 !!! **`geckodriver`** !!!
-- 依赖见 `requirements.txt`
-
----
-
-**快速开始**：
-
-1. 克隆仓库：
-   ```bash
-   git clone https://github.com/chenxing-dev/labor-law-lookup.git
-   cd labor-law-lookup
-   ```
-2. 激活虚拟环境：
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # Linux/Mac
-   venv\Scripts\activate  # Windows
-   ```
-3. 安装依赖：
-   ```bash
-   pip install -r requirements.txt
-   ```
-4. 在 `spiders/urls.py` 中维护要抓取的北大法宝 URL 列表：
-   ```python
-   PKULAW_URLS = {
-       "中华人民共和国劳动法(2018修正)": "https://www.pkulaw.com/chl/6393f2e43412bddbbdfb.html",
-       "中华人民共和国劳动合同法(2012修正)": "https://www.pkulaw.com/chl/7ab5e7d605f859e6bdfb.html",
-   }
-   ```
-
-5. 运行批量抓取：
-   ```bash
-   python spiders --headless
-   ```
-
-   脚本会在 Selenium 浏览器会话中依次抓取 `spiders/urls.py` 里配置的 URL，并根据 `data/*.json` 中已保存的 `url` 字段自动跳过已抓取的法规。
-
-注意：关于 `geckodriver` 路径，脚本会优先使用环境变量 `GECKODRIVER_PATH`，如果未设置则尝试在 `PATH` 中查找 `geckodriver`。
-
-如果需要直接抓取单个 URL，也可以使用：
-
-```bash
-python spiders/law_spider.py --url https://www.pkulaw.com/chl/6393f2e43412bddbbdfb.html --headless
-```
-
-如果需要强制重新抓取 `spiders/urls.py` 中的全部配置项，可以使用：
-
-```bash
-python spiders --headless --force
-```
-
-运行完成后，输出文件会写入 `data/`，调试页面源码会写入 `temp/debug.html`。
+- `spider/`：Python + Selenium 爬虫脚本与辅助函数

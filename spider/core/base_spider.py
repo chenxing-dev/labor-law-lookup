@@ -1,11 +1,13 @@
+"""
+Base Selenium 爬虫
+"""
+
 import os
-import re
-import shutil
+from selenium import webdriver
 from selenium.webdriver.firefox.service import Service
+from selenium.webdriver.firefox.webdriver import WebDriver
 
-
-def normalize_text(text: str) -> str:
-    return re.sub(r"\s+", " ", (text or "")).strip()
+import shutil
 
 
 def get_geckodriver_service() -> Service:
@@ -20,3 +22,13 @@ def get_geckodriver_service() -> Service:
             "未找到 geckodriver。请设置环境变量 GECKODRIVER_PATH 或将 geckodriver 安装并加入 PATH。"
         )
     return Service(gecko_path)
+
+
+def create_firefix_driver(headless: bool = True) -> WebDriver:
+    """Create and return a Firefox WebDriver with the given headless setting."""
+    options = webdriver.FirefoxOptions()
+    if headless:
+        options.add_argument("-headless")
+    service = get_geckodriver_service()
+    driver = WebDriver(service=service, options=options)
+    return driver
